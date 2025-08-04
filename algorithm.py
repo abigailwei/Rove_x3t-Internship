@@ -20,6 +20,14 @@ class RedemptionOptimizer:
             'short_haul': {'economy': 7500, 'business': 15000, 'first': 25000}
         }
         
+        # Hotel redemption rates (cents per mile)
+        self.hotel_redemption_rates = {
+            'economy': 1.45,  # 1.45 cents per mile for economy hotels
+            'mid_scale': 1.65,  # 1.65 cents per mile for mid-scale hotels
+            'upscale': 1.95,  # 1.95 cents per mile for upscale hotels
+            'luxury': 2.25   # 2.25 cents per mile for luxury hotels
+        }
+        
         self.gift_card_rates = {
             'giftcards.com': 4, 'visa gift card': 4, 'mastercard gift card': 4, 'airbnb gift card': 4,
             'doordash gift card': 4, 'uber gift card': 4, 'uber eats gift card': 4, 'starbucks gift card': 4,
@@ -114,6 +122,88 @@ class RedemptionOptimizer:
             print(f"Error gathering flight data: {e}")
             return []
     
+    def gather_hotel_data(self, city_code: str, check_in_date: str, check_out_date: str) -> List[Dict]:
+        """Gather hotel data from Amadeus API"""
+        try:
+            # Get hotels in the city
+            hotels_response = self.amadeus.reference_data.locations.hotels.by_city.get(
+                cityCode=city_code
+            )
+            
+            if not hotels_response.data:
+                return []
+            
+            hotels = []
+            hotels_checked = 0
+            
+            for hotel in hotels_response.data[:10]:  # Check first 10 hotels
+                try:
+                    hotel_id = hotel.get('hotelId')
+                    if hotel_id:
+                        offers_response = self.amadeus.shopping.hotel_offers_search.get(
+                            hotelIds=hotel_id,
+                            checkInDate=check_in_date,
+                            checkOutDate=check_out_date,
+                            adults=1
+                        )
+                        
+                        if offers_response.data:
+                            for offer in offers_response.data:
+                                hotel_info = offer.get('hotel', {})
+                                first_offer = offer.get('offers', [{}])[0]
+                                price = first_offer.get('price', {})
+                                
+                                # Determine hotel category based on rating
+                                rating = hotel_info.get('rating', 0)
+                                if rating >= 4.5:
+                                    category = 'luxury'
+                                elif rating >= 4.0:
+                                    category = 'upscale'
+                                elif rating >= 3.0:
+                                    category = 'mid_scale'
+                                else:
+                                    category = 'economy'
+                                
+                                hotel_data = {
+                                    'name': hotel_info.get('name', 'Unknown'),
+                                    'price': float(price.get('total', 0)),
+                                    'currency': price.get('currency', 'USD'),
+                                    'rating': rating,
+                                    'category': category,
+                                    'chain': hotel_info.get('chainCode', 'Independent')
+                                }
+                                hotels.append(hotel_data)
+                                hotels_checked += 1
+                                
+                                if hotels_checked >= 20:  # Limit to 20 hotels
+                                    break
+                        
+                        if hotels_checked >= 20:
+                            break
+                            
+                except Exception as e:
+                    continue
+            
+            return hotels
+            
+        except Exception as e:
+            print(f"Error gathering hotel data: {e}")
+            return []
+    
+    def get_city_code(self, city_name: str) -> str:
+        """Get the IATA city code for a given city name"""
+        try:
+            response = self.amadeus.reference_data.locations.get(
+                keyword=city_name,
+                subType="CITY"
+            )
+            if response.data:
+                return response.data[0]['iataCode']
+            return None
+        except Exception as e:
+            print(f"Error getting city code for {city_name}: {e}")
+            return None
+    
     def calculate_route_type(self, origin: str, destination: str) -> str:
         us_airports = ['JFK', 'LAX', 'ORD', 'DFW', 'ATL', 'SFO', 'BOS', 'SEA', 'DCA', 'IAD']
         eu_airports = ['LHR', 'CDG', 'FRA', 'MAD', 'BCN', 'FCO', 'AMS', 'MUC']
@@ -167,7 +257,47 @@ class RedemptionOptimizer:
                         'origin': origin,
                         'destination': destination,
                         'date': departure_date,
-                        'duration': flight['duration']
+                        'duration': flight['duration'],
+                        'airline': flight['airline'],
+                        'cabin': flight['cabin']
+                    }
+                })
+        
+        return redemption_options
+    
+    def analyze_hotel_redemptions(self, user_miles: int, city_name: str, 
+                                 check_in_date: str, check_out_date: str) -> List[Dict]:
+        """Analyze hotel redemption options"""
+        city_code = self.get_city_code(city_name)
+        if not city_code:
+            return []
+        
+        hotels = self.gather_hotel_data(city_code, check_in_date, check_out_date)
+        redemption_options = []
+        
+        for hotel in hotels:
+            # Calculate miles required based on hotel category (cents per mile)
+            cpm_rate = self.hotel_redemption_rates[hotel['category']]
+            # For hotels: miles = price / (cpm_rate / 100)
+            miles_required = int(hotel['price'] / (cpm_rate / 100))
+            
+            if miles_required <= user_miles:
+                cpm = cpm_rate  # Use the fixed CPM rate for hotels
+                
+                redemption_options.append({
+                    'type': 'hotel',
+                    'description': f"{hotel['name']} ({hotel['category'].replace('_', ' ').title()})",
+                    'cash_value': hotel['price'],
+                    'miles_required': miles_required,
+                    'cpm': cpm,
+                    'details': {
+                        'hotel_name': hotel['name'],
+                        'category': hotel['category'],
+                        'rating': hotel['rating'],
+                        'chain': hotel['chain'],
+                        'check_in': check_in_date,
+                        'check_out': check_out_date,
+                        'city': city_name
                     }
                 })
         
@@ -197,93 +327,183 @@ class RedemptionOptimizer:
         return redemption_options
     
     def optimize_redemption(self, user_miles: int, origin: str = None, 
-                           destination: str = None, departure_date: str = None) -> Dict:
+                           destination: str = None, departure_date: str = None,
+                           city_name: str = None, check_in_date: str = None, 
+                           check_out_date: str = None) -> Dict:
         all_options = []
+        flight_options = []
+        hotel_options = []
+        gift_card_options = []
         
+        # Analyze flights if flight parameters are provided
         if origin and destination and departure_date:
             flight_options = self.analyze_flight_redemptions(
                 user_miles, origin, destination, departure_date
             )
             all_options.extend(flight_options)
         
+        # Analyze hotels if hotel parameters are provided
+        if city_name and check_in_date and check_out_date:
+            hotel_options = self.analyze_hotel_redemptions(
+                user_miles, city_name, check_in_date, check_out_date
+            )
+            all_options.extend(hotel_options)
+        
+        # Always analyze gift cards
         gift_card_options = self.analyze_gift_card_redemptions(user_miles)
         all_options.extend(gift_card_options)
         
+        # Sort each category by CPM and get top 3 for each
+        flight_options.sort(key=lambda x: x['cpm'], reverse=True)
+        hotel_options.sort(key=lambda x: x['cpm'], reverse=True)
+        gift_card_options.sort(key=lambda x: x['cpm'], reverse=True)
+        
+        top_flights = flight_options[:3]
+        top_hotels = hotel_options[:3]
+        top_gift_cards = gift_card_options[:3]
+        
+        # Find overall best option
         all_options.sort(key=lambda x: x['cpm'], reverse=True)
+        best_overall = all_options[0] if all_options else None
         
         output = {
             'user_input': {
                 'miles_balance': user_miles,
                 'origin': origin,
                 'destination': destination,
-                'travel_date': departure_date
+                'travel_date': departure_date,
+                'city_name': city_name,
+                'check_in_date': check_in_date,
+                'check_out_date': check_out_date
             },
-            'best_recommendation': all_options[0] if all_options else None,
-            'top_3_options': all_options[:3],
-            'summary': self._generate_summary(all_options, user_miles),
+            'best_overall_recommendation': best_overall,
+            'top_options_by_category': {
+                'flights': top_flights,
+                'hotels': top_hotels,
+                'gift_cards': top_gift_cards
+            },
+            'summary': self._generate_summary(best_overall, user_miles),
             'detailed_analysis': {
                 'total_options_analyzed': len(all_options),
-                'flight_options': len([opt for opt in all_options if opt['type'] == 'flight']),
-                'gift_card_options': len([opt for opt in all_options if opt['type'] == 'gift_card']),
+                'flight_options': len(flight_options),
+                'hotel_options': len(hotel_options),
+                'gift_card_options': len(gift_card_options),
                 'average_cpm': sum(opt['cpm'] for opt in all_options) / len(all_options) if all_options else 0
             }
         }
         
         return output
     
-    def _generate_summary(self, options: List[Dict], user_miles: int) -> str:
-        if not options:
+    def _generate_summary(self, best_option: Dict, user_miles: int) -> str:
+        if not best_option:
             return f"No redemption options available for {user_miles:,} miles."
         
-        best = options[0]
-        if best['type'] == 'flight':
-            return (f"BEST VALUE: Redeem {best['miles_required']:,} miles for a "
-                   f"{best['description']} flight worth ${best['cash_value']:.2f}. "
-                   f"This gives you {best['cpm']:.2f} cents per mile in value.")
+        if best_option['type'] == 'flight':
+            return (f"BEST OVERALL VALUE: Redeem {best_option['miles_required']:,} miles for a "
+                   f"{best_option['description']} flight worth ${best_option['cash_value']:.2f}. "
+                   f"This gives you {best_option['cpm']:.2f} cents per mile in value.")
+        elif best_option['type'] == 'hotel':
+            return (f"BEST OVERALL VALUE: Redeem {best_option['miles_required']:,} miles for a "
+                   f"{best_option['description']} hotel stay worth ${best_option['cash_value']:.2f}. "
+                   f"This gives you {best_option['cpm']:.2f} cents per mile in value.")
         else:
-            return (f"BEST VALUE: Redeem your {user_miles:,} miles for a "
-                   f"{best['description']} worth ${best['cash_value']:.2f}. "
-                   f"This gives you {best['cpm']:.2f} cents per mile in value.")
+            return (f"BEST OVERALL VALUE: Redeem your {user_miles:,} miles for a "
+                   f"{best_option['description']} worth ${best_option['cash_value']:.2f}. "
+                   f"This gives you {best_option['cpm']:.2f} cents per mile in value.")
 
 def main():
     print("=== ROVE MILES REDEMPTION OPTIMIZER ===\n")
     
     user_miles = int(input("Enter number of miles: "))
     
+    # Flight search
     use_flight = input("Do you want to search for flights? (y/n): ").lower() == 'y'
-    
     origin = destination = departure_date = None
     if use_flight:
         origin = input("Enter origin (e.g., JFK): ").upper()
         destination = input("Enter destination (e.g., LAX): ").upper()
         departure_date = input("Enter departure date (YYYY-MM-DD): ")
     
+    # Hotel search
+    use_hotel = input("Do you want to search for hotels? (y/n): ").lower() == 'y'
+    city_name = check_in_date = check_out_date = None
+    if use_hotel:
+        city_name = input("Enter city name (e.g., Madrid, Barcelona): ").strip()
+        check_in_date = input("Enter check-in date (YYYY-MM-DD): ")
+        check_out_date = input("Enter check-out date (YYYY-MM-DD): ")
+    
     optimizer = RedemptionOptimizer()
     
     print("\nAnalyzing redemption options...")
-    result = optimizer.optimize_redemption(user_miles, origin, destination, departure_date)
+    result = optimizer.optimize_redemption(
+        user_miles, origin, destination, departure_date, 
+        city_name, check_in_date, check_out_date
+    )
     
-    print("\n" + "="*50)
+    print("\n" + "="*60)
     print("OPTIMIZATION RESULTS")
-    print("="*50)
+    print("="*60)
     
     print(f"\nYour miles: {result['user_input']['miles_balance']:,}")
     if result['user_input']['origin']:
-        print(f"Route: {result['user_input']['origin']} → {result['user_input']['destination']}")
-        print(f"Date: {result['user_input']['travel_date']}")
+        print(f"Flight Route: {result['user_input']['origin']} → {result['user_input']['destination']}")
+        print(f"Flight Date: {result['user_input']['travel_date']}")
+    if result['user_input']['city_name']:
+        print(f"Hotel City: {result['user_input']['city_name']}")
+        print(f"Hotel Dates: {result['user_input']['check_in_date']} to {result['user_input']['check_out_date']}")
     
     print(f"\n{result['summary']}")
     
-    print("\n--- TOP 3 REDEMPTION OPTIONS ---")
-    for i, option in enumerate(result['top_3_options'], 1):
-        print(f"\n{i}. {option['description']}")
-        print(f"   Value: ${option['cash_value']:.2f}")
-        print(f"   Miles: {option['miles_required']:,}")
-        print(f"   CPM: {option['cpm']:.2f} cents/mile")
+    # Display top options by category
+    print("\n" + "="*60)
+    print("TOP 3 OPTIONS BY CATEGORY")
+    print("="*60)
     
-    print("\n--- ANALYSIS SUMMARY ---")
-    print(f"Options analyzed: {result['detailed_analysis']['total_options_analyzed']}")
+    # Flights
+    if result['top_options_by_category']['flights']:
+        print(f"\n🛫 TOP 3 FLIGHT OPTIONS:")
+        for i, option in enumerate(result['top_options_by_category']['flights'], 1):
+            print(f"\n{i}. {option['description']}")
+            print(f"   Value: ${option['cash_value']:.2f}")
+            print(f"   Miles: {option['miles_required']:,}")
+            print(f"   CPM: {option['cpm']:.2f} cents/mile")
+            if 'details' in option and 'duration' in option['details']:
+                print(f"   Duration: {option['details']['duration']}")
+    else:
+        print(f"\n🛫 FLIGHT OPTIONS: No flight options available")
+    
+    # Hotels
+    if result['top_options_by_category']['hotels']:
+        print(f"\n🏨 TOP 3 HOTEL OPTIONS:")
+        for i, option in enumerate(result['top_options_by_category']['hotels'], 1):
+            print(f"\n{i}. {option['description']}")
+            print(f"   Value: ${option['cash_value']:.2f}")
+            print(f"   Miles: {option['miles_required']:,}")
+            print(f"   CPM: {option['cpm']:.2f} cents/mile")
+            if 'details' in option and 'rating' in option['details']:
+                print(f"   Rating: {option['details']['rating']}")
+    else:
+        print(f"\n🏨 HOTEL OPTIONS: No hotel options available")
+    
+    # Gift Cards
+    if result['top_options_by_category']['gift_cards']:
+        print(f"\n🎁 TOP 3 GIFT CARD OPTIONS:")
+        for i, option in enumerate(result['top_options_by_category']['gift_cards'], 1):
+            print(f"\n{i}. {option['description']}")
+            print(f"   Value: ${option['cash_value']:.2f}")
+            print(f"   Miles: {option['miles_required']:,}")
+            print(f"   CPM: {option['cpm']:.2f} cents/mile")
+            if 'details' in option and 'miles_per_dollar' in option['details']:
+                print(f"   Miles per Dollar: {option['details']['miles_per_dollar']}")
+    else:
+        print(f"\n🎁 GIFT CARD OPTIONS: No gift card options available")
+    
+    print("\n" + "="*60)
+    print("ANALYSIS SUMMARY")
+    print("="*60)
+    print(f"Total options analyzed: {result['detailed_analysis']['total_options_analyzed']}")
     print(f"Flight options: {result['detailed_analysis']['flight_options']}")
+    print(f"Hotel options: {result['detailed_analysis']['hotel_options']}")
     print(f"Gift card options: {result['detailed_analysis']['gift_card_options']}")
     print(f"Average CPM: {result['detailed_analysis']['average_cpm']:.2f} cents/mile")
 

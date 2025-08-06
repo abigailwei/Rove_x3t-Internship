@@ -28,6 +28,8 @@ class RedemptionOptimizer:
             'luxury': 2.25   # 2.25 cents per mile for luxury hotels
         }
         
+        stopover = ['JFK', 'LHR', 'CDG', 'YYZ', 'FRA', 'DXB', 'AMS', 'ORD']
+
         self.gift_card_rates = {
             'giftcards.com': 4, 'visa gift card': 4, 'mastercard gift card': 4, 'airbnb gift card': 4,
             'doordash gift card': 4, 'uber gift card': 4, 'uber eats gift card': 4, 'starbucks gift card': 4,
@@ -116,11 +118,93 @@ class RedemptionOptimizer:
                 }
                 flights.append(flight)
             
-            return flights
-            
         except Exception as e:
             print(f"Error gathering flight data: {e}")
             return []
+        
+        ##below is example code for synthetic routing, it doesn't actually work with free version of Amadeus, and only uses BCN as a stop, but it can be duplicated for any stop, and would need to pass in use_synthetic in the above function
+        ''' 
+        flights = []
+
+        if use_synthetic: ##just example code using BCN
+            stop = "BCN"
+
+            try:
+                # Leg 1: origin -> BCN
+                response1 = self.amadeus.shopping.flight_offers_search.get(
+                    originLocationCode=origin,
+                    destinationLocationCode=stop,
+                    departureDate=departure_date,
+                    adults=1,
+                    max=10
+                )
+
+                for offer1 in response1.data:
+                    try:
+                        price1 = float(offer1['price']['total'])
+                        airline1 = offer1['itineraries'][0]['segments'][0]['carrierCode']
+                        duration1 = offer1['itineraries'][0]['duration']
+                        leg1_arrival_str = offer1['itineraries'][0]['segments'][-1]['arrival']['at']
+                        leg1_arrival_dt = datetime.fromisoformat(leg1_arrival_str)
+
+                        # Leg 2: BCN -> destination
+                        response2 = self.amadeus.shopping.flight_offers_search.get(
+                            originLocationCode=stop,
+                            destinationLocationCode=destination,
+                            departureDate=departure_date,
+                            adults=1,
+                            max=10
+                        )
+
+                        for offer2 in response2.data:
+                            try:
+                                leg2_departure_str = offer2['itineraries'][0]['segments'][0]['departure']['at']
+                                leg2_departure_dt = datetime.fromisoformat(leg2_departure_str)
+
+                                if leg2_departure_dt > leg1_arrival_dt:
+                                    price2 = float(offer2['price']['total'])
+                                    total_price = price1 + price2
+                                    currency = offer2['price']['currency']
+                                    airline2 = offer2['itineraries'][0]['segments'][0]['carrierCode']
+                                    duration2 = offer2['itineraries'][0]['duration']
+                                    cabin = offer2['travelerPricings'][0]['fareDetailsBySegment'][0].get('cabin', 'ECONOMY')
+
+                                    flight = {
+                                        'price': total_price,
+                                        'currency': currency,
+                                        'airline': f"{airline1} & {airline2}",
+                                        'duration': f"{duration1} + {duration2}",  # You can combine ISO durations properly later
+                                        'cabin': cabin,
+                                        'stopover': stop
+                                    }
+
+                                    flights.append(flight)
+
+                            except Exception as e:
+                                print(f"Error in leg 2 loop: {e}")
+                                continue
+
+                    except Exception as e:
+                        print(f"Error in leg 1 loop: {e}")
+                        continue
+
+            except Exception as e:
+                print(f"Error fetching synthetic flights: {e}")
+            '''
+
+
+
+
+
+
+
+
+
+
+
+
+
+        return flights
     
     def gather_hotel_data(self, city_code: str, check_in_date: str, check_out_date: str) -> List[Dict]:
         """Gather hotel data from Amadeus API"""
@@ -418,11 +502,14 @@ def main():
     
     # Flight search
     use_flight = input("Do you want to search for flights? (y/n): ").lower() == 'y'
+    
     origin = destination = departure_date = None
     if use_flight:
         origin = input("Enter origin (e.g., JFK): ").upper()
         destination = input("Enter destination (e.g., LAX): ").upper()
         departure_date = input("Enter departure date (YYYY-MM-DD): ")
+        use_hidden = input("Do you want to search for hidden city ticketing?").lower() == 'y'
+        use_synthetic = input("Do you want to search for synthetic routes?").lower() == 'y'
     
     # Hotel search
     use_hotel = input("Do you want to search for hotels? (y/n): ").lower() == 'y'

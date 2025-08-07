@@ -122,75 +122,78 @@ class RedemptionOptimizer:
             print(f"Error gathering flight data: {e}")
             return []
         
-        ##below is example code for synthetic routing, it doesn't actually work with free version of Amadeus, and only uses BCN as a stop, but it can be duplicated for any stop, and would need to pass in use_synthetic in the above function
-        ''' 
+        ##below is example code for synthetic routing, it doesn't actually work with free version of Amadeus, and only uses amadeus locations as a stop, but it can work for any
+        '''
         flights = []
 
-        if use_synthetic: ##just example code using BCN
-            stop = "BCN"
+        stopover = ["BCN", "LAX", "PAR", "SFO"]
 
-            try:
-                # Leg 1: origin -> BCN
-                response1 = self.amadeus.shopping.flight_offers_search.get(
-                    originLocationCode=origin,
-                    destinationLocationCode=stop,
-                    departureDate=departure_date,
-                    adults=1,
-                    max=10
-                )
+        if use_synthetic: ##just example code 
+            
+            for stop in stopover:
 
-                for offer1 in response1.data:
-                    try:
-                        price1 = float(offer1['price']['total'])
-                        airline1 = offer1['itineraries'][0]['segments'][0]['carrierCode']
-                        duration1 = offer1['itineraries'][0]['duration']
-                        leg1_arrival_str = offer1['itineraries'][0]['segments'][-1]['arrival']['at']
-                        leg1_arrival_dt = datetime.fromisoformat(leg1_arrival_str)
+                try:
+                    # Leg 1: origin -> stop
+                    response1 = self.amadeus.shopping.flight_offers_search.get(
+                        originLocationCode=origin,
+                        destinationLocationCode=stop,
+                        departureDate=departure_date,
+                        adults=1,
+                        max=10
+                    )
 
-                        # Leg 2: BCN -> destination
-                        response2 = self.amadeus.shopping.flight_offers_search.get(
-                            originLocationCode=stop,
-                            destinationLocationCode=destination,
-                            departureDate=departure_date,
-                            adults=1,
-                            max=10
-                        )
+                    for offer1 in response1.data:
+                        try:
+                            price1 = float(offer1['price']['total'])
+                            airline1 = offer1['itineraries'][0]['segments'][0]['carrierCode']
+                            duration1 = offer1['itineraries'][0]['duration']
+                            leg1_arrival_str = offer1['itineraries'][0]['segments'][-1]['arrival']['at']
+                            leg1_arrival_dt = datetime.fromisoformat(leg1_arrival_str)
 
-                        for offer2 in response2.data:
-                            try:
-                                leg2_departure_str = offer2['itineraries'][0]['segments'][0]['departure']['at']
-                                leg2_departure_dt = datetime.fromisoformat(leg2_departure_str)
+                            # Leg 2: stop -> destination
+                            response2 = self.amadeus.shopping.flight_offers_search.get(
+                                originLocationCode=stop,
+                                destinationLocationCode=destination,
+                                departureDate=departure_date,
+                                adults=1,
+                                max=10
+                            )
 
-                                if leg2_departure_dt > leg1_arrival_dt:
-                                    price2 = float(offer2['price']['total'])
-                                    total_price = price1 + price2
-                                    currency = offer2['price']['currency']
-                                    airline2 = offer2['itineraries'][0]['segments'][0]['carrierCode']
-                                    duration2 = offer2['itineraries'][0]['duration']
-                                    cabin = offer2['travelerPricings'][0]['fareDetailsBySegment'][0].get('cabin', 'ECONOMY')
+                            for offer2 in response2.data:
+                                try:
+                                    leg2_departure_str = offer2['itineraries'][0]['segments'][0]['departure']['at']
+                                    leg2_departure_dt = datetime.fromisoformat(leg2_departure_str)
 
-                                    flight = {
-                                        'price': total_price,
-                                        'currency': currency,
-                                        'airline': f"{airline1} & {airline2}",
-                                        'duration': f"{duration1} + {duration2}",  # You can combine ISO durations properly later
-                                        'cabin': cabin,
-                                        'stopover': stop
-                                    }
+                                    if leg2_departure_dt > leg1_arrival_dt:
+                                        price2 = float(offer2['price']['total'])
+                                        total_price = price1 + price2
+                                        currency = offer2['price']['currency']
+                                        airline2 = offer2['itineraries'][0]['segments'][0]['carrierCode']
+                                        duration2 = offer2['itineraries'][0]['duration']
+                                        cabin = offer2['travelerPricings'][0]['fareDetailsBySegment'][0].get('cabin', 'ECONOMY')
 
-                                    flights.append(flight)
+                                        flight = {
+                                            'price': total_price,
+                                            'currency': currency,
+                                            'airline': f"{airline1} & {airline2}",
+                                            'duration': f"{duration1} + {duration2}",  
+                                            'cabin': cabin,
+                                            'stopover': stop
+                                        }
 
-                            except Exception as e:
-                                print(f"Error in leg 2 loop: {e}")
-                                continue
+                                        flights.append(flight)
 
-                    except Exception as e:
-                        print(f"Error in leg 1 loop: {e}")
-                        continue
+                                except Exception as e:
+                                    print(f"Error in leg 2 loop: {e}")
+                                    continue
 
-            except Exception as e:
-                print(f"Error fetching synthetic flights: {e}")
-            '''
+                        except Exception as e:
+                            print(f"Error in leg 1 loop: {e}")
+                            continue
+
+                except Exception as e:
+                    print(f"Error fetching synthetic flights: {e}")
+                '''
 
 
 
@@ -508,8 +511,8 @@ def main():
         origin = input("Enter origin (e.g., JFK): ").upper()
         destination = input("Enter destination (e.g., LAX): ").upper()
         departure_date = input("Enter departure date (YYYY-MM-DD): ")
-        use_hidden = input("Do you want to search for hidden city ticketing?").lower() == 'y'
-        use_synthetic = input("Do you want to search for synthetic routes?").lower() == 'y'
+        use_hidden = input("Do you want to search for hidden city ticketing flights? (y/n): ").lower() == 'y'
+        use_synthetic = input("Do you want to search for synthetic route flights? (y/n): ").lower() == 'y'
     
     # Hotel search
     use_hotel = input("Do you want to search for hotels? (y/n): ").lower() == 'y'
@@ -555,7 +558,10 @@ def main():
             print(f"   Miles: {option['miles_required']:,}")
             print(f"   CPM: {option['cpm']:.2f} cents/mile")
             if 'details' in option and 'duration' in option['details']:
-                print(f"   Duration: {option['details']['duration']}")
+                duration = str(option['details']['duration'])
+                duration = duration.replace("H", " Hours & ")
+                duration = duration.replace("M", " Minutes ")
+                print(f"   Duration: " + duration[2:])
     else:
         print(f"\n🛫 FLIGHT OPTIONS: No flight options available")
     

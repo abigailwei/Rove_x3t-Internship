@@ -12,7 +12,17 @@ class RedemptionOptimizer:
     def __init__(self):
         api_key = os.getenv('AMADEUS_API_KEY')
         api_secret = os.getenv('AMADEUS_API_SECRET')
-        self.amadeus = Client(client_id=api_key, client_secret=api_secret)
+        # Initialize Amadeus client only if credentials are present
+        self.amadeus = None
+        try:
+            if api_key and api_secret:
+                self.amadeus = Client(client_id=api_key, client_secret=api_secret)
+        except Exception:
+            # In case the client cannot be created, fall back to mock mode
+            self.amadeus = None
+
+        # Track whether mock data was used in the last call
+        self.last_used_mock_flights = False
         
         self.award_charts = {
             'domestic': {'economy': 12500, 'business': 25000, 'first': 50000},
@@ -28,8 +38,6 @@ class RedemptionOptimizer:
             'luxury': 2.25   # 2.25 cents per mile for luxury hotels
         }
         
-        stopover = ['JFK', 'LHR', 'CDG', 'YYZ', 'FRA', 'DXB', 'AMS', 'ORD']
-
         self.gift_card_rates = {
             'giftcards.com': 4, 'visa gift card': 4, 'mastercard gift card': 4, 'airbnb gift card': 4,
             'doordash gift card': 4, 'uber gift card': 4, 'uber eats gift card': 4, 'starbucks gift card': 4,
@@ -98,115 +106,60 @@ class RedemptionOptimizer:
         }
     
     def gather_flight_data(self, origin: str, destination: str, departure_date: str) -> List[Dict]:
-        try:
-            response = self.amadeus.shopping.flight_offers_search.get(
-                originLocationCode=origin,
-                destinationLocationCode=destination,
-                departureDate=departure_date,
-                adults=1,
-                max=10
-            )
-            
-            flights = []
-            for offer in response.data:
-                flight = {
-                    'price': float(offer['price']['total']),
-                    'currency': offer['price']['currency'],
-                    'airline': offer['itineraries'][0]['segments'][0]['carrierCode'],
-                    'duration': offer['itineraries'][0]['duration'],
-                    'cabin': offer['travelerPricings'][0]['fareDetailsBySegment'][0].get('cabin', 'ECONOMY')
-                }
-                flights.append(flight)
-            
-        except Exception as e:
-            print(f"Error gathering flight data: {e}")
-            return []
-        
-        ##below is example code for synthetic routing, it doesn't actually work with free version of Amadeus, and only uses amadeus locations as a stop, but it can work for any
-        '''
+        """Return flight offers. Falls back to mock data when API is unavailable/errors."""
+        # Default to not using mock until proven otherwise
+        self.last_used_mock_flights = False
+
+        # Try live API when available
+        if self.amadeus is not None:
+            try:
+                response = self.amadeus.shopping.flight_offers_search.get(
+                    originLocationCode=origin,
+                    destinationLocationCode=destination,
+                    departureDate=departure_date,
+                    adults=1,
+                    max=10
+                )
+
+                flights = []
+                for offer in response.data:
+                    flight = {
+                        'price': float(offer['price']['total']),
+                        'currency': offer['price']['currency'],
+                        'airline': offer['itineraries'][0]['segments'][0]['carrierCode'],
+                        'duration': offer['itineraries'][0]['duration'],
+                        'cabin': offer['travelerPricings'][0]['fareDetailsBySegment'][0].get('cabin', 'ECONOMY')
+                    }
+                    flights.append(flight)
+
+                if flights:
+                    return flights
+            except Exception as e:
+                print(f"Error gathering flight data: {e}")
+
+        # Fallback to mock data so the UI still shows results
+        self.last_used_mock_flights = True
+        return self._mock_flight_offers(origin, destination)
+
+    def _mock_flight_offers(self, origin: str, destination: str) -> List[Dict]:
+        """Provide deterministic mock flight data to keep the app usable offline."""
+        # Reasonable sample prices and cabins to generate varied CPMs
+        sample_offers = [
+            {"price": 189.0, "currency": "USD", "airline": "DL", "duration": "PT6H10M", "cabin": "ECONOMY"},
+            {"price": 249.0, "currency": "USD", "airline": "AA", "duration": "PT6H05M", "cabin": "ECONOMY"},
+            {"price": 512.0, "currency": "USD", "airline": "UA", "duration": "PT6H00M", "cabin": "BUSINESS"},
+            {"price": 799.0, "currency": "USD", "airline": "B6", "duration": "PT5H55M", "cabin": "FIRST"},
+            {"price": 329.0, "currency": "USD", "airline": "AS", "duration": "PT6H20M", "cabin": "ECONOMY"},
+        ]
         flights = []
-
-        stopover = ["BCN", "LAX", "PAR", "SFO"]
-
-        if use_synthetic: ##just example code 
-            
-            for stop in stopover:
-
-                try:
-                    # Leg 1: origin -> stop
-                    response1 = self.amadeus.shopping.flight_offers_search.get(
-                        originLocationCode=origin,
-                        destinationLocationCode=stop,
-                        departureDate=departure_date,
-                        adults=1,
-                        max=10
-                    )
-
-                    for offer1 in response1.data:
-                        try:
-                            price1 = float(offer1['price']['total'])
-                            airline1 = offer1['itineraries'][0]['segments'][0]['carrierCode']
-                            duration1 = offer1['itineraries'][0]['duration']
-                            leg1_arrival_str = offer1['itineraries'][0]['segments'][-1]['arrival']['at']
-                            leg1_arrival_dt = datetime.fromisoformat(leg1_arrival_str)
-
-                            # Leg 2: stop -> destination
-                            response2 = self.amadeus.shopping.flight_offers_search.get(
-                                originLocationCode=stop,
-                                destinationLocationCode=destination,
-                                departureDate=departure_date,
-                                adults=1,
-                                max=10
-                            )
-
-                            for offer2 in response2.data:
-                                try:
-                                    leg2_departure_str = offer2['itineraries'][0]['segments'][0]['departure']['at']
-                                    leg2_departure_dt = datetime.fromisoformat(leg2_departure_str)
-
-                                    if leg2_departure_dt > leg1_arrival_dt:
-                                        price2 = float(offer2['price']['total'])
-                                        total_price = price1 + price2
-                                        currency = offer2['price']['currency']
-                                        airline2 = offer2['itineraries'][0]['segments'][0]['carrierCode']
-                                        duration2 = offer2['itineraries'][0]['duration']
-                                        cabin = offer2['travelerPricings'][0]['fareDetailsBySegment'][0].get('cabin', 'ECONOMY')
-
-                                        flight = {
-                                            'price': total_price,
-                                            'currency': currency,
-                                            'airline': f"{airline1} & {airline2}",
-                                            'duration': f"{duration1} + {duration2}",  
-                                            'cabin': cabin,
-                                            'stopover': stop
-                                        }
-
-                                        flights.append(flight)
-
-                                except Exception as e:
-                                    print(f"Error in leg 2 loop: {e}")
-                                    continue
-
-                        except Exception as e:
-                            print(f"Error in leg 1 loop: {e}")
-                            continue
-
-                except Exception as e:
-                    print(f"Error fetching synthetic flights: {e}")
-                '''
-
-
-
-
-
-
-
-
-
-
-
-
-
+        for offer in sample_offers:
+            flights.append({
+                'price': float(offer['price']),
+                'currency': offer['currency'],
+                'airline': offer['airline'],
+                'duration': offer['duration'],
+                'cabin': offer['cabin']
+            })
         return flights
     
     def gather_hotel_data(self, city_code: str, check_in_date: str, check_out_date: str) -> List[Dict]:
@@ -505,14 +458,11 @@ def main():
     
     # Flight search
     use_flight = input("Do you want to search for flights? (y/n): ").lower() == 'y'
-    
     origin = destination = departure_date = None
     if use_flight:
         origin = input("Enter origin (e.g., JFK): ").upper()
         destination = input("Enter destination (e.g., LAX): ").upper()
         departure_date = input("Enter departure date (YYYY-MM-DD): ")
-        use_hidden = input("Do you want to search for hidden city ticketing flights? (y/n): ").lower() == 'y'
-        use_synthetic = input("Do you want to search for synthetic route flights? (y/n): ").lower() == 'y'
     
     # Hotel search
     use_hotel = input("Do you want to search for hotels? (y/n): ").lower() == 'y'
@@ -558,10 +508,7 @@ def main():
             print(f"   Miles: {option['miles_required']:,}")
             print(f"   CPM: {option['cpm']:.2f} cents/mile")
             if 'details' in option and 'duration' in option['details']:
-                duration = str(option['details']['duration'])
-                duration = duration.replace("H", " Hours & ")
-                duration = duration.replace("M", " Minutes ")
-                print(f"   Duration: " + duration[2:])
+                print(f"   Duration: {option['details']['duration']}")
     else:
         print(f"\n🛫 FLIGHT OPTIONS: No flight options available")
     

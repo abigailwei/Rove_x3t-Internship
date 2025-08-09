@@ -445,7 +445,7 @@ def main():
         )
         st.components.v1.html(
             f"""
-            <iframe src='{embed_url}'  height='1200' frameborder='0' marginheight='0' marginwidth='0'>
+            <iframe src='{embed_url}'  width = '100%' height='1200' frameborder='0' marginheight='0' marginwidth='0'>
             Loading…
             </iframe>
             """,
@@ -457,6 +457,7 @@ def main():
 if __name__ == "__main__":
 
     main() 
+
 
 
 

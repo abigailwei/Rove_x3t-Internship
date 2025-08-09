@@ -287,11 +287,6 @@ def main():
             4. **Choose** the best redemption for you
             """)
         
-        # Quick start
-        st.subheader("🚀 Quick Start")
-        if st.button("Start Optimizing Your Miles"):
-            st.session_state.active_tab = "Search"
-            st.rerun()
     
     with tab2:
         st.header("🔍 Search Redemption Options")
@@ -480,6 +475,7 @@ def main():
 if __name__ == "__main__":
 
     main() 
+
 
 
 

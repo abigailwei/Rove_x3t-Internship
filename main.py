@@ -5,10 +5,8 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import time
 import pandas as pd
-from dotenv import load_dotenv
 from amadeus import Client, ResponseError
 
-load_dotenv()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,8 +27,8 @@ class FlightDataCollector:
         ]
     
     def _initialize_amadeus_client(self) -> Client:
-        api_key = os.getenv('AMADEUS_API_KEY')
-        api_secret = os.getenv('AMADEUS_API_SECRET')
+        amadeus_api_key = st.secrets["AMADEUS_API_KEY"]
+        amadeus_api_secret = st.secrets["AMADEUS_API_SECRET"]
         if not api_key or not api_secret:
             raise ValueError("Amadeus API credentials not found in environment variables")
         return Client(client_id=api_key, client_secret=api_secret)
@@ -198,4 +196,5 @@ def main():
         print(f"An error occurred: {e}")
 
 if __name__ == "__main__":
+
     main()

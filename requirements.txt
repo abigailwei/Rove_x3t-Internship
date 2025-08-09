@@ -1,0 +1,12 @@
+amadeus
+python-dotenv
+requests
+pandas
+python-dateutil
+streamlit
+plotly
+folium
+streamlit-folium
+
+
+

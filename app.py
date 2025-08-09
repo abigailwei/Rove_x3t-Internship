@@ -83,10 +83,6 @@ st.markdown("""
     .stButton > button:hover {
         background: linear-gradient(90deg, #2980b9 0%, #1f4e79 100%);
     }
-    
-    div[data-testid="stHtml"] {
-        width: 100%;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -449,7 +445,7 @@ def main():
         )
         st.components.v1.html(
             f"""
-            <iframe src='{embed_url}' width='100%' height='1200' frameborder='0' marginheight='0' marginwidth='0'>
+            <iframe src='{embed_url}' width='500%' height='1200' frameborder='0' marginheight='0' marginwidth='0'>
             Loading…
             </iframe>
             """,
@@ -460,6 +456,7 @@ def main():
 if __name__ == "__main__":
 
     main() 
+
 
 
 

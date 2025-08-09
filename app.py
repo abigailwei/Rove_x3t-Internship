@@ -93,8 +93,8 @@ if 'results' not in st.session_state:
     st.session_state.results = None
 if 'user_feedback' not in st.session_state:
     st.session_state.user_feedback = []
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "Home"
+if 'user_feedback' not in st.session_state:
+    st.session_state.user_feedback = []
     
 def initialize_optimizer():
     """Initialize the RedemptionOptimizer"""
@@ -436,45 +436,27 @@ def main():
         st.header("💰 Savings Calculator")
         create_savings_calculator()
     
-    with tab5:
+   with tab5:
         st.header("💬 User Feedback")
-        
-        # Feedback form
-        with st.form("feedback_form"):
-            st.subheader("Share Your Experience")
-            
-            rating = st.slider("How would you rate this tool?", 1, 5, 3)
-            feedback_type = st.selectbox("Feedback Type", ["General", "Bug Report", "Feature Request", "Improvement"])
-            feedback_text = st.text_area("Your Feedback", placeholder="Tell us what you think...")
-            
-            submitted_feedback = st.form_submit_button("Submit Feedback")
-            
-            if submitted_feedback and feedback_text:
-                feedback = {
-                    'timestamp': datetime.now(),
-                    'rating': rating,
-                    'type': feedback_type,
-                    'text': feedback_text
-                }
-                st.session_state.user_feedback.append(feedback)
-                st.success("Thank you for your feedback!")
-        
-        # Display feedback
-        if st.session_state.user_feedback:
-            st.subheader("Recent Feedback")
-            for feedback in st.session_state.user_feedback[-5:]:  # Show last 5
-                st.markdown(f"""
-                <div class="option-card">
-                    <p><strong>Rating:</strong> {'⭐' * feedback['rating']}</p>
-                    <p><strong>Type:</strong> {feedback['type']}</p>
-                    <p><strong>Feedback:</strong> {feedback['text']}</p>
-                    <p><small>{feedback['timestamp'].strftime('%Y-%m-%d %H:%M')}</small></p>
-                </div>
-                """, unsafe_allow_html=True)
+        st.subheader("Google Form")
+        # Embed provided Google Form as an iframe (convert /edit to a responder view)
+        embed_url = (
+            "https://docs.google.com/forms/d/1p65ckXjGpL4y2N9MnRq82Tp_LN5Nr2qUCxffoRxm7Cs/viewform?embedded=true"
+        )
+        st.components.v1.html(
+            f"""
+            <iframe src='{embed_url}' width='100%' height='1200' frameborder='0' marginheight='0' marginwidth='0'>
+            Loading…
+            </iframe>
+            """,
+            height=1220,
+            scrolling=True,
+        )
 
 if __name__ == "__main__":
 
     main() 
+
 
 
 

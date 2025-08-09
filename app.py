@@ -83,6 +83,10 @@ st.markdown("""
     .stButton > button:hover {
         background: linear-gradient(90deg, #2980b9 0%, #1f4e79 100%);
     }
+    
+    div[data-testid="stHtml"] {
+        width: 100%;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -456,6 +460,7 @@ def main():
 if __name__ == "__main__":
 
     main() 
+
 
 
 

@@ -5,8 +5,9 @@ pandas
 python-dateutil
 streamlit
 plotly
-folium
+st_folium
 streamlit-folium
+
 
 
 

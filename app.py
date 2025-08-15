@@ -39,7 +39,7 @@ st.markdown("""
     }
     
     .metric-card {
-        background: white;
+        background: black;
         padding: 1rem;
         border-radius: 10px;
         border-left: 4px solid #2980b9;
@@ -262,7 +262,7 @@ def main():
         search_gift_cards = st.checkbox("Search Gift Cards", value=True)
     
     # Main content area
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠 Home", "Search", "📊 Analysis", "💰 Calculator", "💬 Feedback"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Home", "Search", "Analysis", "Calculator", "Feedback"])
     
     with tab1:
         st.header("Welcome to Rove Miles Optimizer")
@@ -457,6 +457,7 @@ def main():
 if __name__ == "__main__":
 
     main() 
+
 
 
 

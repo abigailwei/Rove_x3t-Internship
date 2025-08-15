@@ -2,11 +2,13 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import folium
 from streamlit_folium import folium_static
 from datetime import datetime, timedelta
 import sys
 import os
+from textwrap import dedent
 
 # Add the current directory to Python path to import algorithm
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -26,62 +28,171 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Set global Plotly theme to dark
+px.defaults.template = "plotly_dark"
+pio.templates.default = "plotly_dark"
+
 # Custom CSS for styling
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+    :root {
+        --bg: #0b0f15;
+        --panel: #0f172a;
+        --panel-2: #111827;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --accent-1: #7c3aed;
+        --accent-2: #06b6d4;
+        --success: #10b981;
+        --warning: #f59e0b;
+        --danger: #ef4444;
+    }
+
+    .stApp { background-color: var(--bg) !important; color: var(--text) !important; }
+    .stApp, .stApp * { color: var(--text) !important; font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Liberation Sans', sans-serif; }
+    .block-container { padding-top: 3rem; }
+
+    /* Remove Streamlit top bar/menu/footer */
+    [data-testid="stHeader"] { display: none; }
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+
+    /* Links - remove default blue underline globally */
+    a, a:visited { color: inherit !important; text-decoration: none !important; }
+    a:hover, a:focus, a:active { text-decoration: none !important; outline: none !important; box-shadow: none !important; }
+
+    /* Inputs - dark theme with animated focus */
+    input[type="text"], input[type="number"], input[type="email"], input[type="password"],
+    textarea, select {
+        background-color: var(--panel-2) !important;
+        color: var(--text) !important;
+        border: 1px solid #374151 !important; /* thin gray */
+        border-radius: 10px !important;
+        padding: 0.55rem 0.75rem !important;
+        transition: border-color .35s ease-in-out, box-shadow .35s ease-in-out, transform .15s ease-in-out;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+    input:hover, textarea:hover, select:hover {
+        border-color: #4b5563 !important;
+    }
+    input:focus, textarea:focus, select:focus {
+        border-color: var(--accent-2) !important;
+        box-shadow: 0 0 0 3px rgba(6,182,212,0.18) !important;
+        transform: translateY(-1px);
+    }
+    /* Streamlit number/date/time inputs containers */
+    [data-testid="stNumberInput"] input,
+    [data-testid="stTextInput"] input,
+    [data-testid="stDateInput"] input,
+    [data-testid="stTextArea"] textarea {
+        background-color: var(--panel-2) !important;
+        color: var(--text) !important;
+    }
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0d1117 0%, #0b0f15 100%);
+        color: var(--text);
+        border-right: 1px solid #1f2937;
+    }
+    [data-testid="stSidebar"] * { color: var(--text) !important; }
+
+    /* Header */
     .main-header {
-        background: linear-gradient(90deg, #1f4e79 0%, #2980b9 100%);
+        background: radial-gradient(1200px 300px at 10% -20%, rgba(124,58,237,0.35), transparent),
+                    radial-gradient(1200px 300px at 90% -20%, rgba(6,182,212,0.25), transparent),
+                    linear-gradient(90deg, #0b0f15 0%, #0b0f15 100%);
         padding: 2rem;
-        border-radius: 10px;
-        color: white;
+        border-radius: 16px;
+        color: var(--text);
         text-align: center;
-        margin-bottom: 2rem;
+        margin: 1rem 0 2rem 0;
+        border: 1px solid #1f2937;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02), 0 10px 30px rgba(0,0,0,0.45);
+        background-size: 140% 140%;
+        animation: headerPulse 14s ease-in-out infinite;
     }
-    
+
     .metric-card {
-        background: black;
+        background: var(--panel);
         padding: 1rem;
-        border-radius: 10px;
-        border-left: 4px solid #2980b9;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-radius: 12px;
+        border-left: 4px solid var(--accent-2);
+        box-shadow: 0 10px 24px rgba(0,0,0,0.25);
         margin: 0.5rem 0;
+        color: var(--text);
+        transition: transform .3s ease-in-out, box-shadow .3s ease-in-out, border-color .3s ease-in-out;
+        animation: fadeInUp .8s ease both;
     }
-    
+    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(0,0,0,0.35); }
+
     .option-card {
-        background: black;
+        background: var(--panel-2);
         padding: 1.5rem;
-        border-radius: 10px;
-        border: 1px solid #e0e0e0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-radius: 12px;
+        border: 1px solid #1f2937;
+        box-shadow: 0 10px 24px rgba(0,0,0,0.25);
         margin: 1rem 0;
+        color: var(--text);
+        transition: transform .3s ease-in-out, box-shadow .3s ease-in-out, border-color .3s ease-in-out;
+        animation: fadeInUp .8s ease both;
     }
-    
-    .cpm-high {
-        color: #27ae60;
-        font-weight: bold;
-    }
-    
-    .cpm-medium {
-        color: #f39c12;
-        font-weight: bold;
-    }
-    
-    .cpm-low {
-        color: #e74c3c;
-        font-weight: bold;
-    }
-    
-    .stButton > button {
-        background: linear-gradient(90deg, #1f4e79 0%, #2980b9 100%);
-        color: white;
+    .option-card:hover { transform: translateY(-3px); box-shadow: 0 18px 36px rgba(0,0,0,0.35); border-color: #263041; }
+
+    .cpm-high { color: var(--success); font-weight: 700; }
+    .cpm-medium { color: var(--warning); font-weight: 700; }
+    .cpm-low { color: var(--danger); font-weight: 700; }
+
+    .stButton > button, .start-btn {
+        background: linear-gradient(90deg, var(--accent-1) 0%, var(--accent-2) 100%);
+        color: white !important;
         border: none;
-        border-radius: 25px;
-        padding: 0.5rem 2rem;
-        font-weight: bold;
+        border-radius: 999px;
+        padding: 0.6rem 1.4rem;
+        font-weight: 700;
+        letter-spacing: 0.2px;
+        text-decoration: none;
+        display: inline-block;
+        transition: transform .25s ease-in-out, filter .25s ease-in-out, box-shadow .35s ease-in-out;
+        box-shadow: 0 8px 20px rgba(124,58,237,0.25), 0 8px 20px rgba(6,182,212,0.15);
     }
-    
-    .stButton > button:hover {
-        background: linear-gradient(90deg, #2980b9 0%, #1f4e79 100%);
+    .stButton > button:hover, .start-btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+    .stButton > button:active, .start-btn:active { transform: translateY(0); }
+
+    /* Make only the Search Redemption submit button text black */
+    #search-submit-area .stButton > button { color: #000 !important; }
+
+    /* Tabs accents */
+    button[role="tab"] {
+        color: var(--muted) !important;
+        border-bottom: none !important; /* fully remove underline */
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+        transition: color .25s ease-in-out;
+    }
+    button[role="tab"][aria-selected="true"] {
+        color: var(--text) !important;
+        border-bottom: none !important;
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
+    }
+    button[role="tab"]:focus, button[role="tab"]:focus-visible { outline: none !important; box-shadow: none !important; }
+
+    /* Simple stagger animation */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(12px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Header pulse gradient */
+    @keyframes headerPulse {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -93,9 +204,7 @@ if 'results' not in st.session_state:
     st.session_state.results = None
 if 'user_feedback' not in st.session_state:
     st.session_state.user_feedback = []
-if 'user_feedback' not in st.session_state:
-    st.session_state.user_feedback = []
-    
+
 def initialize_optimizer():
     """Initialize the RedemptionOptimizer"""
     try:
@@ -124,6 +233,9 @@ def create_comparison_chart(results):
     categories = []
     
     for category, options in results['top_options_by_category'].items():
+        # Exclude gift cards from analysis visuals
+        if category == 'gift_cards':
+            continue
         if options:
             for option in options[:3]:  # Top 3 from each category
                 data.append({
@@ -140,19 +252,35 @@ def create_comparison_chart(results):
     
     df = pd.DataFrame(data)
     
-    fig = px.bar(df, x='Option', y='CPM', color='Category',
-                 title='Redemption Options Comparison by CPM',
-                 color_discrete_map={
-                     'Flights': '#3498db',
-                     'Hotels': '#e74c3c', 
-                     'Gift Cards': '#2ecc71'
-                 })
+    fig = px.bar(
+        df,
+        x='Option',
+        y='CPM',
+        color='Category',
+        animation_frame='Category',
+        title='Redemption Options Comparison by CPM',
+        color_discrete_map={
+            'Flights': '#06b6d4',
+            'Hotels': '#7c3aed'
+        }
+    )
     
     fig.update_layout(
         xaxis_title="Redemption Option",
         yaxis_title="Cents Per Mile (CPM)",
-        height=500
+        height=500,
+        template="plotly_dark",
+        font=dict(family="Poppins, sans-serif", color="#e5e7eb"),
+        paper_bgcolor="#0b0f15",
+        plot_bgcolor="#0b0f15",
+        transition_duration=500
     )
+    fig.update_traces(marker_line_color='#1f2937', marker_line_width=1)
+    try:
+        fig.layout.updatemenus[0].buttons[0].args[1]["frame"]["duration"] = 800
+        fig.layout.updatemenus[0].buttons[0].args[1]["transition"]["duration"] = 500
+    except Exception:
+        pass
     
     return fig
 
@@ -262,7 +390,7 @@ def main():
         search_gift_cards = st.checkbox("Search Gift Cards", value=True)
     
     # Main content area
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Home", "Search", "Analysis", "Calculator", "Feedback"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠 Home", "✈️ Search", "📊 Analysis", "💰 Calculator", "💬 Feedback"])
     
     with tab1:
         st.header("Welcome to Rove Miles Optimizer")
@@ -286,7 +414,6 @@ def main():
             3. **Compare** options by CPM value
             4. **Choose** the best redemption for you
             """)
-        
     
     with tab2:
         st.header("🔍 Search Redemption Options")
@@ -313,7 +440,10 @@ def main():
                 check_in = st.date_input("Check-in Date", value=datetime.now() + timedelta(days=30))
                 check_out = st.date_input("Check-out Date", value=datetime.now() + timedelta(days=32))
             
+            # Wrap submit button to target its text color only
+            st.markdown('<div id="search-submit-area">', unsafe_allow_html=True)
             submitted = st.form_submit_button("🔍 Search Redemption Options")
+            st.markdown('</div>', unsafe_allow_html=True)
             
             if submitted:
                 with st.spinner("Analyzing redemption options..."):
@@ -330,6 +460,13 @@ def main():
                         
                         st.session_state.results = result
                         st.success("Analysis complete!")
+                        # Notify when mock flight data is used
+                        try:
+                            if getattr(optimizer, 'last_used_mock_flights', False):
+                                #st.info("Showing sample flight results (live API unavailable).")
+                                pass
+                        except Exception:
+                            pass
                         
                     except Exception as e:
                         st.error(f"Error during analysis: {e}")
@@ -367,11 +504,14 @@ def main():
             
             # Category results
             for category, options in results['top_options_by_category'].items():
+                icon = '🛫' if category == 'flights' else '🏨' if category == 'hotels' else '🎁'
+                label = category.replace('_', ' ').title()
                 if options:
-                    st.subheader(f"{'🛫' if category == 'flights' else '🏨' if category == 'hotels' else '🎁'} Top {category.replace('_', ' ').title()} Options")
+                    st.subheader(f"{icon} Top {label} Options")
                     
-                    for i, option in enumerate(options, 1):
-                        if option['cpm'] >= min_cpm and option['miles_required'] <= max_miles:
+                    filtered = [o for o in options if o['cpm'] >= min_cpm and o['miles_required'] <= max_miles]
+                    if filtered:
+                        for i, option in enumerate(filtered, 1):
                             st.markdown(f"""
                             <div class="option-card">
                                 <h4>{i}. {option['description']}</h4>
@@ -380,6 +520,10 @@ def main():
                                 <strong>CPM:</strong> <span class="{get_cpm_color(option['cpm'])}">{option['cpm']:.2f}</span></p>
                             </div>
                             """, unsafe_allow_html=True)
+                    else:
+                        st.info(f"No {label} redemption options found matching your filters.")
+                else:
+                    st.info(f"No {label} redemption options found in this section.")
     
     with tab3:
         st.header("📊 Analysis & Insights")
@@ -408,6 +552,9 @@ def main():
                 # CPM distribution
                 all_options = []
                 for category, options in results['top_options_by_category'].items():
+                    # Exclude gift cards from analysis visuals
+                    if category == 'gift_cards':
+                        continue
                     for option in options:
                         all_options.append({
                             'Category': category.replace('_', ' ').title(),
@@ -420,14 +567,35 @@ def main():
                     fig = px.histogram(df, x='CPM', color='Category', 
                                      title='CPM Distribution by Category',
                                      nbins=20)
+                    fig.update_layout(
+                        template="plotly_dark",
+                        font=dict(family="Poppins, sans-serif", color="#e5e7eb"),
+                        paper_bgcolor="#0b0f15",
+                        plot_bgcolor="#0b0f15",
+                        transition_duration=500
+                    )
+                    fig.update_traces(marker_line_color='#1f2937', marker_line_width=1)
                     st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 # Value vs CPM scatter
                 if all_options:
                     fig = px.scatter(df, x='CPM', y='Value', color='Category',
+                                   animation_frame='Category', animation_group='Category',
                                    title='Value vs CPM Scatter Plot',
                                    hover_data=['Category'])
+                    fig.update_layout(
+                        template="plotly_dark",
+                        font=dict(family="Poppins, sans-serif", color="#e5e7eb"),
+                        paper_bgcolor="#0b0f15",
+                        plot_bgcolor="#0b0f15",
+                        transition_duration=500
+                    )
+                    try:
+                        fig.layout.updatemenus[0].buttons[0].args[1]["frame"]["duration"] = 800
+                        fig.layout.updatemenus[0].buttons[0].args[1]["transition"]["duration"] = 500
+                    except Exception:
+                        pass
                     st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Run a search first to see analysis and insights.")
@@ -445,38 +613,13 @@ def main():
         )
         st.components.v1.html(
             f"""
-            <iframe src='{embed_url}'  width = '100%' height='500' frameborder='0' marginheight='0' marginwidth='0'>
+            <iframe src='{embed_url}' width='100%' height='1200' frameborder='0' marginheight='0' marginwidth='0'>
             Loading…
             </iframe>
             """,
-            width = 2000,
             height=1220,
             scrolling=True,
         )
 
 if __name__ == "__main__":
-
     main() 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
